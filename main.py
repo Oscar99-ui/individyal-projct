@@ -13,10 +13,7 @@ PIECES = {
 
 class ChessGame:
 
-    # Инициализация игры
-    # создание окна, доски и выбор стороны
     def __init__(self, root):
-
         self.root = root
         self.root.title('Шахматы с ИИ')
 
@@ -27,17 +24,14 @@ class ChessGame:
         )
         self.canvas.pack()
 
-        # выбор стороны игрока
         self.player_color = self.choose_side()
 
-        # цвет ИИ
         self.ai_color = (
             'black'
             if self.player_color == 'white'
             else 'white'
         )
 
-        # начальная расстановка фигур
         self.board = [
             ['r','n','b','q','k','b','n','r'],
             ['p','p','p','p','p','p','p','p'],
@@ -52,21 +46,26 @@ class ChessGame:
         self.selected = None
         self.turn = 'white'
 
-        # обработка клика мышкой
-        self.canvas.bind('<Button-1>', self.click)
+        # Информация для рокировки
+        self.king_moved = {
+            'white': False,
+            'black': False
+        }
+        self.rook_moved = {
+            'white_left': False,
+            'white_right': False,
+            'black_left': False,
+            'black_right': False
+        }
 
-        # рисование доски
+        self.canvas.bind('<Button-1>', self.click)
         self.draw_board()
 
-        # если ИИ белый — он ходит первым
         if self.ai_color == 'white':
             self.root.after(500, self.ai_move)
 
-    # выбор стороны
     def choose_side(self):
-
         result = tk.StringVar(value='white')
-
         window = tk.Toplevel(self.root)
         window.title('Выбор стороны')
         window.geometry('250x150')
@@ -98,14 +97,11 @@ class ChessGame:
         self.root.wait_window(window)
         return result.get()
 
-    # рисование доски и фигур
     def draw_board(self):
-
         self.canvas.delete('all')
 
         for row in range(BOARD_SIZE):
             for col in range(BOARD_SIZE):
-
                 x1 = col * CELL_SIZE
                 y1 = row * CELL_SIZE
                 x2 = x1 + CELL_SIZE
@@ -118,14 +114,9 @@ class ChessGame:
                 )
 
                 self.canvas.create_rectangle(
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    fill=color
+                    x1, y1, x2, y2, fill=color
                 )
 
-                # переворот доски для чёрных
                 board_row = row
                 board_col = col
 
@@ -137,15 +128,12 @@ class ChessGame:
 
                 if piece:
                     self.canvas.create_text(
-                        x1 + 40,
-                        y1 + 40,
+                        x1 + 40, y1 + 40,
                         text=PIECES[piece],
                         font=('Arial', 36)
                     )
 
-        # подсветка выбранной фигуры
         if self.selected:
-
             row, col = self.selected
 
             if self.player_color == 'black':
@@ -161,70 +149,50 @@ class ChessGame:
                 width=3
             )
 
-    # обработка клика игрока
     def click(self, event):
-
-        # нельзя ходить во время ИИ
         if self.turn != self.player_color:
             return
 
         col = event.x // CELL_SIZE
         row = event.y // CELL_SIZE
 
-        # переворот координат
         if self.player_color == 'black':
             row = 7 - row
             col = 7 - col
 
         if self.selected is None:
-
             piece = self.board[row][col]
 
             if piece:
-
                 if (
                     self.player_color == 'white'
                     and piece.isupper()
                 ):
                     self.selected = (row, col)
-
                 elif (
                     self.player_color == 'black'
                     and piece.islower()
                 ):
                     self.selected = (row, col)
-
         else:
-
             old_row, old_col = self.selected
-
-            moved = self.move_piece(
-                old_row,
-                old_col,
-                row,
-                col
-            )
+            moved = self.move_piece(old_row, old_col, row, col)
 
             self.selected = None
             self.draw_board()
 
-            # ход ИИ после игрока
             if moved:
                 self.root.after(500, self.ai_move)
-
             return
 
         self.draw_board()
 
-    # проверка свободного пути
     def is_path_clear(self, old_row, old_col, new_row, new_col):
-
         row_step = (
             0
             if new_row == old_row
             else (1 if new_row > old_row else -1)
         )
-
         col_step = (
             0
             if new_col == old_col
@@ -235,25 +203,52 @@ class ChessGame:
         col = old_col + col_step
 
         while (row, col) != (new_row, new_col):
-
             if self.board[row][col] != '':
                 return False
-
             row += row_step
             col += col_step
 
         return True
 
-    # проверка допустимого хода
-    def is_valid_move(self, old_row, old_col, new_row, new_col):
+    # Проверка возможности рокировки
+    def can_castle(self, old_row, old_col, new_row, new_col):
+        piece = self.board[old_row][old_col]
+        if piece not in ('K', 'k'):
+            return False
+        if abs(new_col - old_col) != 2:
+            return False
 
+        color = 'white' if piece.isupper() else 'black'
+
+        if self.king_moved[color]:
+            return False
+
+        # Короткая рокировка (король вправо)
+        if new_col > old_col:
+            rook_flag = 'white_right' if color == 'white' else 'black_right'
+            if self.rook_moved[rook_flag]:
+                return False
+            for c in range(old_col + 1, 7):
+                if self.board[old_row][c] != '':
+                    return False
+            return True
+        # Длинная рокировка (король влево)
+        else:
+            rook_flag = 'white_left' if color == 'white' else 'black_left'
+            if self.rook_moved[rook_flag]:
+                return False
+            for c in range(1, old_col):
+                if self.board[old_row][c] != '':
+                    return False
+            return True
+
+    def is_valid_move(self, old_row, old_col, new_row, new_col):
         piece = self.board[old_row][old_col]
         target = self.board[new_row][new_col]
 
         if piece == '':
             return False
 
-        # нельзя бить свои фигуры
         if target:
             if piece.isupper() and target.isupper():
                 return False
@@ -262,20 +257,16 @@ class ChessGame:
 
         piece_type = piece.lower()
 
-        # пешка
         if piece_type == 'p':
-
             direction = -1 if piece.isupper() else 1
             start_row = 6 if piece.isupper() else 1
 
             if new_col == old_col:
-
                 if (
                     new_row == old_row + direction
                     and target == ''
                 ):
                     return True
-
                 if (
                     new_row == old_row + 2 * direction
                     and old_row == start_row
@@ -283,123 +274,106 @@ class ChessGame:
                     and self.board[old_row + direction][old_col] == ''
                 ):
                     return True
-
             elif abs(new_col - old_col) == 1:
-
                 if (
                     new_row == old_row + direction
                     and target != ''
                 ):
                     return True
-
             return False
 
-        # ладья
         elif piece_type == 'r':
-
             if old_row != new_row and old_col != new_col:
                 return False
+            return self.is_path_clear(old_row, old_col, new_row, new_col)
 
-            return self.is_path_clear(
-                old_row,
-                old_col,
-                new_row,
-                new_col
-            )
-
-        # слон
         elif piece_type == 'b':
-
             if abs(new_row - old_row) != abs(new_col - old_col):
                 return False
+            return self.is_path_clear(old_row, old_col, new_row, new_col)
 
-            return self.is_path_clear(
-                old_row,
-                old_col,
-                new_row,
-                new_col
-            )
-
-        # ферзь
         elif piece_type == 'q':
-
             straight = old_row == new_row or old_col == new_col
             diagonal = abs(new_row - old_row) == abs(new_col - old_col)
-
             if not (straight or diagonal):
                 return False
+            return self.is_path_clear(old_row, old_col, new_row, new_col)
 
-            return self.is_path_clear(
-                old_row,
-                old_col,
-                new_row,
-                new_col
-            )
-
-        # конь
         elif piece_type == 'n':
-
             return (
                 abs(new_row - old_row),
                 abs(new_col - old_col)
             ) in [(2, 1), (1, 2)]
 
-        # король
         elif piece_type == 'k':
-
-            return (
+            normal_move = (
                 abs(new_row - old_row) <= 1
                 and abs(new_col - old_col) <= 1
             )
+            if normal_move:
+                return True
+            if self.can_castle(old_row, old_col, new_row, new_col):
+                return True
+            return False
 
         return False
 
-    # выполнение хода
     def move_piece(self, old_row, old_col, new_row, new_col):
-
-        if not self.is_valid_move(
-            old_row,
-            old_col,
-            new_row,
-            new_col
-        ):
+        if not self.is_valid_move(old_row, old_col, new_row, new_col):
             return False
 
         piece = self.board[old_row][old_col]
         target = self.board[new_row][new_col]
 
+        # Рокировка
+        if (
+            piece.lower() == 'k'
+            and abs(new_col - old_col) == 2
+        ):
+            if new_col > old_col:
+                rook_old_col = 7
+                rook_new_col = 5
+            else:
+                rook_old_col = 0
+                rook_new_col = 3
+            rook = self.board[old_row][rook_old_col]
+            self.board[old_row][rook_new_col] = rook
+            self.board[old_row][rook_old_col] = ''
+
         self.board[new_row][new_col] = piece
         self.board[old_row][old_col] = ''
 
-        # проверка победы
+        # Король ходил
+        if piece == 'K':
+            self.king_moved['white'] = True
+        if piece == 'k':
+            self.king_moved['black'] = True
+
+        # Ладьи ходили
+        if piece == 'R':
+            if old_col == 0:
+                self.rook_moved['white_left'] = True
+            elif old_col == 7:
+                self.rook_moved['white_right'] = True
+        if piece == 'r':
+            if old_col == 0:
+                self.rook_moved['black_left'] = True
+            elif old_col == 7:
+                self.rook_moved['black_right'] = True
+
+        # Проверка победы
         if target and target.lower() == 'k':
-
-            winner = (
-                'Белые'
-                if piece.isupper()
-                else 'Чёрные'
-            )
-
+            winner = 'Белые' if piece.isupper() else 'Чёрные'
             messagebox.showinfo(
                 'Конец игры',
                 f'{winner} победили!'
             )
-
             self.root.quit()
 
-        # смена хода
-        self.turn = (
-            'black'
-            if self.turn == 'white'
-            else 'white'
-        )
-
+        self.turn = 'black' if self.turn == 'white' else 'white'
         return True
 
-    # ход ИИ
     def ai_move(self):
-
-        # ИИ ходит только в свой ход
         if self.turn != self.ai_color:
             return
 
@@ -407,19 +381,14 @@ class ChessGame:
 
         for row in range(BOARD_SIZE):
             for col in range(BOARD_SIZE):
-
                 piece = self.board[row][col]
-
                 if piece == '':
                     continue
-
-                # ИИ играет своим цветом
                 if (
                     self.ai_color == 'white'
                     and not piece.isupper()
                 ):
                     continue
-
                 if (
                     self.ai_color == 'black'
                     and not piece.islower()
@@ -428,28 +397,12 @@ class ChessGame:
 
                 for new_row in range(BOARD_SIZE):
                     for new_col in range(BOARD_SIZE):
-
-                        if self.is_valid_move(
-                            row,
-                            col,
-                            new_row,
-                            new_col
-                        ):
-                            moves.append(
-                                (row, col, new_row, new_col)
-                            )
+                        if self.is_valid_move(row, col, new_row, new_col):
+                            moves.append((row, col, new_row, new_col))
 
         if moves:
-
             move = random.choice(moves)
-
-            self.move_piece(
-                move[0],
-                move[1],
-                move[2],
-                move[3]
-            )
-
+            self.move_piece(move[0], move[1], move[2], move[3])
             self.draw_board()
 
 
